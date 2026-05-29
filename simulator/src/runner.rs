@@ -39,11 +39,15 @@ impl SimHost {
     ) -> Self {
         let budget = Budget::default();
 
-        if let Some(ref _calib) = calibration {
-            // Note: In newer versions of soroban_env_host, the Budget interface
-            // no longer uses set_model() or CostModel directly like this.
-            // Resource calibration settings from the request are ignored
-            // in this simulator version to maintain compatibility with the SDK.
+        // If the caller requested a custom resource calibration, explicitly
+        // fail early rather than silently ignoring the setting. This avoids
+        // surprising behaviour where the provided calibration is ignored due
+        // to version incompatibilities with `soroban_env_host`.
+        if let Some(ref calib) = calibration {
+            panic!(
+                "Unsupported: custom resource calibration requested ({:?}). The simulator does not support applying custom calibrations with the current soroban_env_host version.",
+                calib
+            );
         }
 
         if let Some((_cpu, _mem)) = budget_limits {
