@@ -1452,3 +1452,6 @@ mod tests {
         assert_eq!(count, 1);
     }
 }
+
+#[cfg(test)]
+mod test;
