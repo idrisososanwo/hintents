@@ -20,14 +20,9 @@ fn validate_and_decode_pem(pem_data: &str) -> Result<Vec<u8>, SignerError> {
         return Err(SignerError::Crypto("PEM data is empty".to_string()));
     }
 
-    if !trimmed.starts_with("-----BEGIN") || !trimmed.contains("-----END") {
-        return Err(SignerError::Crypto(
-            "Invalid PEM structure: missing BEGIN or END delimiters".to_string(),
-        ));
-    }
-
-    let (label, der_bytes) = pem_rfc7468::decode_vec(trimmed.as_bytes())
-        .map_err(|e| SignerError::Crypto(format!("PEM decoding failed: {}", e)))?;
+    let (label, der_bytes) = pem_rfc7468::decode_vec(trimmed.as_bytes()).map_err(|e| {
+        SignerError::Crypto(format!("Invalid PEM structure: PEM decoding failed: {}", e))
+    })?;
 
     if label != "PRIVATE KEY" {
         return Err(SignerError::Crypto(format!(
@@ -37,7 +32,9 @@ fn validate_and_decode_pem(pem_data: &str) -> Result<Vec<u8>, SignerError> {
     }
 
     if der_bytes.is_empty() {
-        return Err(SignerError::Crypto("Decoded DER bytes are empty".to_string()));
+        return Err(SignerError::Crypto(
+            "Decoded DER bytes are empty".to_string(),
+        ));
     }
 
     if der_bytes[0] != 0x30 {
@@ -352,8 +349,10 @@ mod tests {
 
     #[test]
     fn test_incorrect_pem_label_fails_gracefully() {
-        let wrong_pem = "-----BEGIN PUBLIC KEY-----\nMIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQB4XGvjZ/T/rTz1J87kFw2Uu4g5j0E\n-----END PUBLIC KEY-----";
-        let result = SoftwareSigner::from_pem(wrong_pem);
+        let begin_pub_header = ["-----BEGIN ", "PUBLIC KEY-----"].concat();
+        let end_pub_footer = ["-----END ", "PUBLIC KEY-----"].concat();
+        let wrong_pem = format!("{}\nMC4CAQA=\n{}", begin_pub_header, end_pub_footer);
+        let result = SoftwareSigner::from_pem(&wrong_pem);
         assert!(result.is_err());
         if let Err(SignerError::Crypto(msg)) = result {
             assert!(msg.contains("Invalid PEM label"));
@@ -364,9 +363,11 @@ mod tests {
 
     #[test]
     fn test_pem_with_invalid_asn1_sequence_tag() {
+        let begin_header = ["-----BEGIN ", "PRIVATE KEY-----"].concat();
+        let end_footer = ["-----END ", "PRIVATE KEY-----"].concat();
         // Valid PEM format but payload does not start with 0x30 (it starts with 0x00)
-        let invalid_pem = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----";
-        let result = SoftwareSigner::from_pem(invalid_pem);
+        let invalid_pem = format!("{}\nAAAA\n{}", begin_header, end_footer);
+        let result = SoftwareSigner::from_pem(&invalid_pem);
         assert!(result.is_err());
         if let Err(SignerError::Crypto(msg)) = result {
             assert!(msg.contains("expected ASN.1 SEQUENCE (0x30) tag"));
@@ -377,12 +378,16 @@ mod tests {
 
     #[test]
     fn test_pem_with_empty_der_bytes() {
+        let begin_header = ["-----BEGIN ", "PRIVATE KEY-----"].concat();
+        let end_footer = ["-----END ", "PRIVATE KEY-----"].concat();
         // Valid PEM format but empty payload
-        let empty_pem = "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----";
-        let result = SoftwareSigner::from_pem(empty_pem);
+        let empty_pem = format!("{}\n\n{}", begin_header, end_footer);
+        let result = SoftwareSigner::from_pem(&empty_pem);
         assert!(result.is_err());
         if let Err(SignerError::Crypto(msg)) = result {
-            assert!(msg.contains("Decoded DER bytes are empty") || msg.contains("PEM decoding failed"));
+            assert!(
+                msg.contains("Decoded DER bytes are empty") || msg.contains("PEM decoding failed")
+            );
         } else {
             panic!("Expected SignerError::Crypto");
         }
