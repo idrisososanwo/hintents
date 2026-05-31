@@ -421,7 +421,13 @@ fn main() {
     };
 
     let mut harness_ctx = context::HarnessContext::default();
-    let harness_logs = harness_ctx.apply_control_command(&request);
+    let harness_logs = match harness_ctx.apply_control_command(&request) {
+        Ok(logs) => logs,
+        Err(e) => {
+            send_error(format!("Harness context error: {}", e));
+            return;
+        }
+    };
 
     let envelope = match base64::engine::general_purpose::STANDARD.decode(&request.envelope_xdr) {
         Ok(bytes) => match soroban_env_host::xdr::TransactionEnvelope::from_xdr(
