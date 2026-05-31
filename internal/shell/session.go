@@ -17,6 +17,10 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
+// maxShellTimestamp is the latest allowed ledger timestamp (2100-01-01 UTC).
+// Prevents unbounded growth when the clock is behind during extended time-travel debugging.
+const maxShellTimestamp int64 = 4102444800
+
 // Session represents an interactive shell session with persistent ledger state
 type Session struct {
 	runner          simulator.RunnerInterface
@@ -201,6 +205,9 @@ func (s *Session) updateLedgerState(resp *simulator.SimulationResponse) {
 	now := time.Now().Unix()
 	if now <= s.timestamp {
 		now = s.timestamp + 1
+	}
+	if now > maxShellTimestamp {
+		now = maxShellTimestamp
 	}
 	s.timestamp = now
 
