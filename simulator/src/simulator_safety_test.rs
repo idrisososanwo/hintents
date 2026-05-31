@@ -19,6 +19,7 @@ use soroban_env_host::{
 use std::env;
 use std::io::Read;
 use tracing_subscriber::{fmt, EnvFilter};
+use tracing::{debug, warn};
 
 fn init_logger() {
     // Check if the environment variable ERST_LOG_FORMAT is set to "json"
@@ -157,7 +158,7 @@ fn main() {
             source_location: None,
         };
         println!("{}", serde_json::to_string(&res).unwrap());
-        eprintln!("Failed to read stdin: {}", e);
+        warn!("Failed to read stdin: {}", e);
         return;
     }
 
@@ -200,7 +201,7 @@ fn main() {
 
     // Decode ResultMeta XDR
     let _result_meta = if request.result_meta_xdr.is_empty() {
-        eprintln!("Warning: ResultMetaXdr is empty. Host storage will be empty.");
+       warn!("ResultMetaXdr is empty. Host storage will be empty.");
         None
     } else {
         match base64::engine::general_purpose::STANDARD.decode(&request.result_meta_xdr) {
@@ -214,7 +215,10 @@ fn main() {
                 }
             },
             Err(e) => {
-                eprintln!("Warning: Failed to decode ResultMeta Base64: {}. Proceeding with empty storage.", e);
+               warn!(
+    "Failed to decode ResultMeta Base64: {}. Proceeding with empty storage.",
+    e
+);
                 None
             }
         }
@@ -226,15 +230,15 @@ fn main() {
             Ok(wasm_bytes) => {
                 let mapper = SourceMapper::new(wasm_bytes);
                 if mapper.has_debug_symbols() {
-                    eprintln!("Debug symbols found in WASM");
+                    debug!("Debug symbols found in WASM");
                     Some(mapper)
                 } else {
-                    eprintln!("No debug symbols found in WASM");
+                    debug!("No debug symbols found in WASM");
                     None
                 }
             }
             Err(e) => {
-                eprintln!("Failed to decode WASM base64: {}", e);
+               warn!("Failed to decode WASM base64: {}", e);
                 None
             }
         }
@@ -331,7 +335,7 @@ fn main() {
         if let Err(e) =
             inferno::flamegraph::from_reader(&mut options, folded_data.as_bytes(), &mut result)
         {
-            eprintln!("Failed to generate flamegraph: {}", e);
+           warn!("Failed to generate flamegraph: {}", e);
         } else {
             flamegraph_svg = Some(String::from_utf8_lossy(&result).to_string());
         }
