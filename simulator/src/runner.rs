@@ -167,7 +167,7 @@ impl SimHost {
     /// Convert a Val back to u32.
     pub fn _val_to_u32(&self, v: Val) -> Result<u32, HostError> {
         v.try_into_val(&self.inner).map_err(|_| {
-            EnvError::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidInput).into()
+            EnvError::from_type_and_code(ScErrorType::Value, ScErrorCode::InvalidInput).into()
         })
     }
 
