@@ -10,9 +10,13 @@ use tempfile::TempDir;
 
 #[test]
 fn test_concurrency_source_map_cache() {
-    let temp_dir = TempDir::new().unwrap_or_else(|err| panic!("failed to create temporary directory: {err:?}"));
+    let temp_dir = TempDir::new()
+        .unwrap_or_else(|err| panic!("failed to create temporary directory: {err:?}"));
     let cache_dir = temp_dir.path().to_path_buf();
-    let cache = Arc::new(SourceMapCache::with_cache_dir(cache_dir).unwrap_or_else(|err| panic!("failed to create source map cache: {err:?}")));
+    let cache = Arc::new(
+        SourceMapCache::with_cache_dir(cache_dir)
+            .unwrap_or_else(|err| panic!("failed to create source map cache: {err:?}")),
+    );
 
     let wasm_hash = "test_hash_1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
     let num_threads = 10u64;
@@ -49,7 +53,9 @@ fn test_concurrency_source_map_cache() {
                         created_at: 1000 + i,
                     };
 
-                    cache.store(entry).unwrap_or_else(|err| panic!("failed to store cache entry: {err:?}"));
+                    cache
+                        .store(entry)
+                        .unwrap_or_else(|err| panic!("failed to store cache entry: {err:?}"));
                 } else {
                     // Read
                     let _ = cache.get(&wasm_hash, false);
@@ -63,10 +69,14 @@ fn test_concurrency_source_map_cache() {
     }
 
     for handle in handles {
-        handle.join().unwrap_or_else(|err| panic!("thread panicked: {err:?}"));
+        handle
+            .join()
+            .unwrap_or_else(|err| panic!("thread panicked: {err:?}"));
     }
 
     // Final state should be readable
-    let final_entry = cache.get(wasm_hash, false).unwrap_or_else(|err| panic!("failed to retrieve final cache entry: {err:?}"));
+    let final_entry = cache
+        .get(wasm_hash, false)
+        .unwrap_or_else(|err| panic!("failed to retrieve final cache entry: {err:?}"));
     assert_eq!(final_entry.wasm_hash, wasm_hash);
 }
