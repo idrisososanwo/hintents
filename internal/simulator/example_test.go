@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package simulator_test
@@ -30,8 +30,8 @@ func ExampleSimulationRequestBuilder_withLedgerEntries() {
 	req, err := simulator.NewSimulationRequestBuilder().
 		WithEnvelopeXDR("AAAAAgAAAACE...").
 		WithResultMetaXDR("AAAAAQAAAAA...").
-		WithLedgerEntry("key1", "value1").
-		WithLedgerEntry("key2", "value2").
+		WithLedgerEntry("a2V5MQ==", "dmFsdWUx").
+		WithLedgerEntry("a2V5Mg==", "dmFsdWUy").
 		Build()
 
 	if err != nil {
@@ -46,9 +46,9 @@ func ExampleSimulationRequestBuilder_withLedgerEntries() {
 // ExampleSimulationRequestBuilder_bulkLedgerEntries demonstrates setting multiple entries at once.
 func ExampleSimulationRequestBuilder_bulkLedgerEntries() {
 	entries := map[string]string{
-		"contract_key_1": "contract_value_1",
-		"contract_key_2": "contract_value_2",
-		"contract_key_3": "contract_value_3",
+		"Y29udHJhY3Rfa2V5XzE=": "Y29udHJhY3RfdmFsdWVfMQ==",
+		"Y29udHJhY3Rfa2V5XzI=": "Y29udHJhY3RfdmFsdWVfMg==",
+		"Y29udHJhY3Rfa2V5XzM=": "Y29udHJhY3RfdmFsdWVfMw==",
 	}
 
 	req, err := simulator.NewSimulationRequestBuilder().
@@ -75,7 +75,7 @@ func ExampleSimulationRequestBuilder_validation() {
 	if err != nil {
 		fmt.Println("Validation error:", err)
 	}
-	// Output: Validation error: result meta XDR is required
+	// Output: Validation error: VALIDATION_FAILED: result meta XDR is required
 }
 
 // ExampleSimulationRequestBuilder_reuse demonstrates builder reuse with Reset().

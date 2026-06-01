@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package rpc
@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/dotandev/hintents/internal/endpoints"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 )
 
@@ -32,7 +33,7 @@ func TestWithToken(t *testing.T) {
 }
 
 func TestWithHorizonURL(t *testing.T) {
-	url := "https://horizon-testnet.stellar.org/"
+	url := endpoints.HorizonTestnet
 	client, err := NewClient(WithHorizonURL(url))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -50,7 +51,7 @@ func TestWithInvalidHorizonURL(t *testing.T) {
 }
 
 func TestWithAltURLs(t *testing.T) {
-	urls := []string{"https://horizon-testnet.stellar.org/", "https://horizon-futurenet.stellar.org/"}
+	urls := []string{endpoints.HorizonTestnet, endpoints.HorizonFuturenet}
 	client, err := NewClient(WithAltURLs(urls))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -71,7 +72,7 @@ func TestWithInvalidAltURL(t *testing.T) {
 }
 
 func TestWithSorobanURL(t *testing.T) {
-	url := "https://soroban-testnet.stellar.org"
+	url := endpoints.SorobanTestnet
 	client, err := NewClient(WithSorobanURL(url))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -124,6 +125,16 @@ func TestWithHTTPClient(t *testing.T) {
 	}
 	if hc.HTTP != customClient {
 		t.Errorf("expected custom HTTP client to be used")
+	}
+}
+
+func TestMethodTelemetry_DefaultsToNoop(t *testing.T) {
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if client.methodTelemetry == nil {
+		t.Fatal("expected default no-op method telemetry")
 	}
 }
 
@@ -250,8 +261,8 @@ func TestFuturenetDefaults(t *testing.T) {
 
 func TestAltURLsAsFailover(t *testing.T) {
 	urls := []string{
-		"https://horizon-testnet.stellar.org/",
-		"https://horizon-futurenet.stellar.org/",
+		endpoints.HorizonTestnet,
+		endpoints.HorizonFuturenet,
 	}
 	client, err := NewClient(WithAltURLs(urls))
 	if err != nil {
@@ -268,6 +279,7 @@ func TestDeprecatedNewClient(t *testing.T) {
 	client := NewClientDefault(Testnet, "token")
 	if client == nil {
 		t.Fatal("expected client, got nil")
+		return
 	}
 	if client.Network != Testnet {
 		t.Errorf("expected Testnet network")
@@ -278,6 +290,7 @@ func TestDeprecatedNewClientWithURL(t *testing.T) {
 	client := NewClientWithURLOption(TestnetHorizonURL, Testnet, "token")
 	if client == nil {
 		t.Fatal("expected client, got nil")
+		return
 	}
 	if client.HorizonURL != TestnetHorizonURL {
 		t.Errorf("expected HorizonURL to match")
@@ -289,6 +302,7 @@ func TestDeprecatedNewClientWithURLs(t *testing.T) {
 	client := NewClientWithURLsOption(urls, Testnet, "token")
 	if client == nil {
 		t.Fatal("expected client, got nil")
+		return
 	}
 	if len(client.AltURLs) != len(urls) {
 		t.Errorf("expected %d URLs", len(urls))
@@ -297,13 +311,13 @@ func TestDeprecatedNewClientWithURLs(t *testing.T) {
 
 func BenchmarkNewClient(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		NewClient(WithNetwork(Testnet), WithToken("token"))
+		_, _ = NewClient(WithNetwork(Testnet), WithToken("token"))
 	}
 }
 
 func BenchmarkNewClientWithMultipleOptions(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		NewClient(
+		_, _ = NewClient(
 			WithNetwork(Testnet),
 			WithToken("token"),
 			WithHorizonURL(TestnetHorizonURL),
@@ -315,6 +329,6 @@ func BenchmarkNewClientWithMultipleOptions(b *testing.B) {
 
 func BenchmarkNewCustomClient(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		NewCustomClient(TestnetConfig)
+		_, _ = NewCustomClient(TestnetConfig)
 	}
 }

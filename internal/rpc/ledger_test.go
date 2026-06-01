@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package rpc
@@ -6,9 +6,17 @@ package rpc
 import (
 	"context"
 	"encoding/base64"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/dotandev/hintents/internal/errors"
 
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	hProtocol "github.com/stellar/go-stellar-sdk/protocols/horizon"
@@ -45,8 +53,8 @@ func TestEncodeLedgerKey(t *testing.T) {
 
 	// Verify we can decode it back
 	var decodedKey xdr.LedgerKey
-	if err := decodedKey.UnmarshalBinary(decoded); err != nil {
-		t.Fatalf("Failed to unmarshal decoded key: %v", err)
+	if unmarshalErr := decodedKey.UnmarshalBinary(decoded); unmarshalErr != nil {
+		t.Fatalf("Failed to unmarshal decoded key: %v", unmarshalErr)
 	}
 
 	if decodedKey.Type != xdr.LedgerEntryTypeAccount {
@@ -82,8 +90,8 @@ func TestEncodeLedgerEntry(t *testing.T) {
 
 	// Verify we can decode it back
 	var decodedEntry xdr.LedgerEntry
-	if err := decodedEntry.UnmarshalBinary(decoded); err != nil {
-		t.Fatalf("Failed to unmarshal decoded entry: %v", err)
+	if unmarshalErr := decodedEntry.UnmarshalBinary(decoded); unmarshalErr != nil {
+		t.Fatalf("Failed to unmarshal decoded entry: %v", unmarshalErr)
 	}
 
 	if decodedEntry.Data.Type != xdr.LedgerEntryTypeAccount {
@@ -110,6 +118,7 @@ func TestLedgerKeyFromEntry_Account(t *testing.T) {
 	key := ledgerKeyFromEntry(entry)
 	if key == nil {
 		t.Fatal("Expected non-nil key")
+		return
 	}
 
 	if key.Type != xdr.LedgerEntryTypeAccount {
@@ -126,33 +135,25 @@ func TestLedgerKeyFromEntry_Account(t *testing.T) {
 }
 
 func TestLedgerKeyFromEntry_ContractData(t *testing.T) {
-	// TODO: Fix xdr.Uint32Ptr and xdr.Uint64Ptr compatibility issues
-	t.Skip("Skipping due to xdr compatibility issues with recent stellar-go version")
-	/*
-		contractID := xdr.Hash([32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32})
-		keyVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: uint32Ptr(42)}
+	contractID := xdr.Hash([32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32})
 
-		entry := xdr.LedgerEntry{
-			Data: xdr.LedgerEntryData{
-				Type: xdr.LedgerEntryTypeContractData,
-				ContractData: &xdr.ContractDataEntry{
-					Contract:   xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeContract, ContractId: (*xdr.ContractId)(&contractID)},
-					Key:        keyVal,
-					Durability: xdr.ContractDataDurabilityPersistent,
-					Val:        xdr.ScVal{Type: xdr.ScValTypeScvU64, U64: uint64Ptr(1000)},
-				},
+	entry := xdr.LedgerEntry{
+		Data: xdr.LedgerEntryData{
+			Type: xdr.LedgerEntryTypeContractData,
+			ContractData: &xdr.ContractDataEntry{
+				Contract:   xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeContract, ContractId: (*xdr.ContractId)(&contractID)},
+				Key:        xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: uint32Ptr(42)},
+				Durability: xdr.ContractDataDurabilityPersistent,
+				Val:        xdr.ScVal{Type: xdr.ScValTypeScvU64, U64: uint64Ptr(1000)},
 			},
-		}
+		},
+	}
 
-		key := ledgerKeyFromEntry(entry)
-		if key == nil {
-			t.Fatal("Expected non-nil key")
-		}
-
-		if key.Type != xdr.LedgerEntryTypeContractData {
-			t.Errorf("Expected ContractData type, got %v", key.Type)
-		}
-	*/
+	key := ledgerKeyFromEntry(entry)
+	require.NotNil(t, key)
+	assert.Equal(t, xdr.LedgerEntryTypeContractData, key.Type)
+	require.NotNil(t, key.ContractData)
+	assert.Equal(t, xdr.ContractDataDurabilityPersistent, key.ContractData.Durability)
 }
 
 func TestLedgerKeyFromEntry_ContractCodeLedger(t *testing.T) {
@@ -171,6 +172,7 @@ func TestLedgerKeyFromEntry_ContractCodeLedger(t *testing.T) {
 	key := ledgerKeyFromEntry(entry)
 	if key == nil {
 		t.Fatal("Expected non-nil key")
+		return
 	}
 
 	if key.Type != xdr.LedgerEntryTypeContractCode {
@@ -222,8 +224,8 @@ func TestExtractFromChanges(t *testing.T) {
 		}
 
 		var key xdr.LedgerKey
-		if err := key.UnmarshalBinary(keyBytes); err != nil {
-			t.Fatalf("Failed to unmarshal key: %v", err)
+		if unmarshalErr := key.UnmarshalBinary(keyBytes); unmarshalErr != nil {
+			t.Fatalf("Failed to unmarshal key: %v", unmarshalErr)
 		}
 
 		if key.Type != xdr.LedgerEntryTypeAccount {
@@ -237,8 +239,8 @@ func TestExtractFromChanges(t *testing.T) {
 		}
 
 		var decodedEntry xdr.LedgerEntry
-		if err := decodedEntry.UnmarshalBinary(entryBytes); err != nil {
-			t.Fatalf("Failed to unmarshal entry: %v", err)
+		if unmarshalErr := decodedEntry.UnmarshalBinary(entryBytes); unmarshalErr != nil {
+			t.Fatalf("Failed to unmarshal entry: %v", unmarshalErr)
 		}
 
 		if decodedEntry.Data.Account.Balance != 5000000 {
@@ -296,6 +298,17 @@ func TestExtractFromChanges_MultipleTypes(t *testing.T) {
 // Ledger Header Tests
 // =============================================================================
 
+// newMockLedgerClient wraps a mockHorizonClient in a Client with AltURLs
+// populated so the failover loop runs at least once in each test.
+func newMockLedgerClient(mock *mockHorizonClient, network Network) *Client {
+	return &Client{
+		Horizon:    mock,
+		Network:    network,
+		HorizonURL: "mock://horizon",
+		AltURLs:    []string{"mock://horizon"},
+	}
+}
+
 // TestGetLedgerHeader_Success tests successful ledger header retrieval
 func TestGetLedgerHeader_Success(t *testing.T) {
 	closeTime := time.Now().UTC()
@@ -328,7 +341,7 @@ func TestGetLedgerHeader_Success(t *testing.T) {
 		}, nil
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx := context.Background()
 
 	header, err := client.GetLedgerHeader(ctx, expectedSequence)
@@ -369,17 +382,17 @@ func TestGetLedgerHeader_NotFound(t *testing.T) {
 		}
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx := context.Background()
 
 	_, err := client.GetLedgerHeader(ctx, 999999999)
 	require.Error(t, err)
 	assert.True(t, IsLedgerNotFound(err), "should be ledger not found error")
 
-	notFoundErr, ok := err.(*LedgerNotFoundError)
-	require.True(t, ok)
-	assert.Equal(t, uint32(999999999), notFoundErr.Sequence)
-	assert.Contains(t, notFoundErr.Message, "not found")
+	var erstErr *errors.ErstError
+	require.True(t, errors.As(err, &erstErr))
+	assert.Equal(t, errors.ErstLedgerNotFound, erstErr.Code)
+	assert.Contains(t, erstErr.Message, "not found")
 }
 
 // TestGetLedgerHeader_Archived tests handling of archived ledgers
@@ -399,17 +412,17 @@ func TestGetLedgerHeader_Archived(t *testing.T) {
 		}
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx := context.Background()
 
 	_, err := client.GetLedgerHeader(ctx, 1)
 	require.Error(t, err)
 	assert.True(t, IsLedgerArchived(err), "should be ledger archived error")
 
-	archivedErr, ok := err.(*LedgerArchivedError)
-	require.True(t, ok)
-	assert.Equal(t, uint32(1), archivedErr.Sequence)
-	assert.Contains(t, archivedErr.Message, "archived")
+	var erstErr *errors.ErstError
+	require.True(t, errors.As(err, &erstErr))
+	assert.Equal(t, errors.ErstLedgerArchived, erstErr.Code)
+	assert.Contains(t, erstErr.Message, "archived")
 }
 
 // TestGetLedgerHeader_RateLimit tests handling of rate limit errors
@@ -429,16 +442,17 @@ func TestGetLedgerHeader_RateLimit(t *testing.T) {
 		}
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx := context.Background()
 
 	_, err := client.GetLedgerHeader(ctx, 12345)
 	require.Error(t, err)
 	assert.True(t, IsRateLimitError(err), "should be rate limit error")
 
-	rateLimitErr, ok := err.(*RateLimitError)
-	require.True(t, ok)
-	assert.Contains(t, rateLimitErr.Message, "rate limit")
+	var erstErr *errors.ErstError
+	require.True(t, errors.As(err, &erstErr))
+	assert.Equal(t, errors.ErstRateLimitExceeded, erstErr.Code)
+	assert.Contains(t, erstErr.Message, "rate limit")
 }
 
 // TestGetLedgerHeader_Timeout tests context timeout handling
@@ -459,7 +473,7 @@ func TestGetLedgerHeader_Timeout(t *testing.T) {
 		}
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	testCtx = ctx
@@ -480,7 +494,7 @@ func TestGetLedgerHeader_GenericError(t *testing.T) {
 		return hProtocol.Ledger{}, errors.New("network error")
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 	ctx := context.Background()
 
 	_, err := client.GetLedgerHeader(ctx, 12345)
@@ -488,95 +502,7 @@ func TestGetLedgerHeader_GenericError(t *testing.T) {
 	assert.False(t, IsLedgerNotFound(err))
 	assert.False(t, IsLedgerArchived(err))
 	assert.False(t, IsRateLimitError(err))
-	assert.Contains(t, err.Error(), "failed to fetch ledger")
-}
-
-// TestFromHorizonLedger tests the conversion from Horizon ledger to our structure
-func TestFromHorizonLedger(t *testing.T) {
-	closeTime := time.Date(2024, 1, 15, 12, 30, 45, 0, time.UTC)
-	failedTxCount := int32(5)
-
-	horizonLedger := hProtocol.Ledger{
-		Sequence:                   12345,
-		Hash:                       "abcd1234",
-		PrevHash:                   "prev5678",
-		ClosedAt:                   closeTime,
-		ProtocolVersion:            20,
-		BaseFee:                    100,
-		BaseReserve:                5000000,
-		MaxTxSetSize:               1000,
-		TotalCoins:                 "1000000000000",
-		FeePool:                    "1000000",
-		HeaderXDR:                  "AAAA...",
-		SuccessfulTransactionCount: 50,
-		FailedTransactionCount:     &failedTxCount,
-		OperationCount:             200,
-	}
-
-	result := FromHorizonLedger(horizonLedger)
-
-	assert.Equal(t, uint32(12345), result.Sequence)
-	assert.Equal(t, "abcd1234", result.Hash)
-	assert.Equal(t, "prev5678", result.PrevHash)
-	assert.Equal(t, closeTime, result.CloseTime)
-	assert.Equal(t, uint32(20), result.ProtocolVersion)
-	assert.Equal(t, int32(100), result.BaseFee)
-	assert.Equal(t, int32(5000000), result.BaseReserve)
-	assert.Equal(t, int32(1000), result.MaxTxSetSize)
-	assert.Equal(t, "1000000000000", result.TotalCoins)
-	assert.Equal(t, "1000000", result.FeePool)
-	assert.Equal(t, "AAAA...", result.HeaderXDR)
-	assert.Equal(t, int32(50), result.SuccessfulTxCount)
-	assert.Equal(t, int32(5), result.FailedTxCount)
-	assert.Equal(t, int32(200), result.OperationCount)
-}
-
-// TestErrorTypes tests the error type checking functions
-func TestErrorTypes(t *testing.T) {
-	notFoundErr := &LedgerNotFoundError{Sequence: 123, Message: "not found"}
-	archivedErr := &LedgerArchivedError{Sequence: 456, Message: "archived"}
-	rateLimitErr := &RateLimitError{Message: "rate limited"}
-	genericErr := errors.New("generic error")
-
-	// Test IsLedgerNotFound
-	assert.True(t, IsLedgerNotFound(notFoundErr))
-	assert.False(t, IsLedgerNotFound(archivedErr))
-	assert.False(t, IsLedgerNotFound(rateLimitErr))
-	assert.False(t, IsLedgerNotFound(genericErr))
-
-	// Test IsLedgerArchived
-	assert.True(t, IsLedgerArchived(archivedErr))
-	assert.False(t, IsLedgerArchived(notFoundErr))
-	assert.False(t, IsLedgerArchived(rateLimitErr))
-	assert.False(t, IsLedgerArchived(genericErr))
-
-	// Test IsRateLimitError
-	assert.True(t, IsRateLimitError(rateLimitErr))
-	assert.False(t, IsRateLimitError(notFoundErr))
-	assert.False(t, IsRateLimitError(archivedErr))
-	assert.False(t, IsRateLimitError(genericErr))
-}
-
-// TestErrorMessages tests that error messages are descriptive
-func TestErrorMessages(t *testing.T) {
-	notFoundErr := &LedgerNotFoundError{
-		Sequence: 123,
-		Message:  "ledger 123 not found (may be archived or not yet created)",
-	}
-	assert.Contains(t, notFoundErr.Error(), "123")
-	assert.Contains(t, notFoundErr.Error(), "not found")
-
-	archivedErr := &LedgerArchivedError{
-		Sequence: 456,
-		Message:  "ledger 456 has been archived and is no longer available",
-	}
-	assert.Contains(t, archivedErr.Error(), "456")
-	assert.Contains(t, archivedErr.Error(), "archived")
-
-	rateLimitErr := &RateLimitError{
-		Message: "rate limit exceeded, please try again later",
-	}
-	assert.Contains(t, rateLimitErr.Error(), "rate limit")
+	assert.True(t, errors.Is(err, errors.ErrRPCConnectionFailed))
 }
 
 // TestGetLedgerHeader_DifferentNetworks tests that the client works with different networks
@@ -599,7 +525,7 @@ func TestGetLedgerHeader_DifferentNetworks(t *testing.T) {
 				}, nil
 			}
 
-			client := &Client{Horizon: mock, Network: network}
+			client := newMockLedgerClient(mock, network)
 			ctx := context.Background()
 
 			header, err := client.GetLedgerHeader(ctx, 12345)
@@ -625,7 +551,7 @@ func TestGetLedgerHeader_ContextWithDeadline(t *testing.T) {
 		}, nil
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 
 	// Create context with deadline
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -651,7 +577,7 @@ func TestGetLedgerHeader_ContextWithoutDeadline(t *testing.T) {
 		}, nil
 	}
 
-	client := &Client{Horizon: mock, Network: Testnet}
+	client := newMockLedgerClient(mock, Testnet)
 
 	// Create context without deadline
 	ctx := context.Background()
@@ -669,4 +595,232 @@ func uint32Ptr(i uint32) *xdr.Uint32 {
 func uint64Ptr(i uint64) *xdr.Uint64 {
 	v := xdr.Uint64(i)
 	return &v
+}
+
+// =============================================================================
+// Offline Ledger Mock Tests (simulator/mock.go format)
+// =============================================================================
+
+// ledgerOverrideManifest mirrors simulator.LedgerOverrideManifest. The helpers
+// below duplicate simulator/mock.go because importing that package would create
+// an import cycle (simulator/port.go imports rpc).
+type ledgerOverrideManifest struct {
+	LedgerEntries map[string]string `json:"ledger_entries,omitempty"`
+}
+
+func loadLedgerOverrideManifest(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest ledgerOverrideManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+
+	return manifest.LedgerEntries, nil
+}
+
+func parseLedgerOverrideFlags(entries []string) (map[string]string, error) {
+	overrides := make(map[string]string)
+	for _, entry := range entries {
+		parts := strings.SplitN(entry, ":", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return nil, fmt.Errorf("invalid ledger override format: %q, expected key:value", entry)
+		}
+		overrides[parts[0]] = parts[1]
+	}
+	return overrides, nil
+}
+
+func mergeLedgerOverrides(base map[string]string, overrides map[string]string) map[string]string {
+	if len(overrides) == 0 {
+		return base
+	}
+	if base == nil {
+		base = make(map[string]string)
+	}
+	for key, value := range overrides {
+		base[key] = value
+	}
+	return base
+}
+
+func makeContractDataLedgerPair(t *testing.T) (keyXDR, entryXDR string) {
+	t.Helper()
+
+	contractID := xdr.Hash([32]byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31})
+	entry := xdr.LedgerEntry{
+		LastModifiedLedgerSeq: 54321,
+		Data: xdr.LedgerEntryData{
+			Type: xdr.LedgerEntryTypeContractData,
+			ContractData: &xdr.ContractDataEntry{
+				Contract:   xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeContract, ContractId: (*xdr.ContractId)(&contractID)},
+				Key:        xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: uint32Ptr(7)},
+				Durability: xdr.ContractDataDurabilityPersistent,
+				Val:        xdr.ScVal{Type: xdr.ScValTypeScvU64, U64: uint64Ptr(9001)},
+			},
+		},
+	}
+
+	key := ledgerKeyFromEntry(entry)
+	require.NotNil(t, key)
+
+	var err error
+	keyXDR, err = EncodeLedgerKey(*key)
+	require.NoError(t, err)
+	entryXDR, err = EncodeLedgerEntry(entry)
+	require.NoError(t, err)
+	return keyXDR, entryXDR
+}
+
+func TestLedgerOverrideManifest_LoadAndMerge(t *testing.T) {
+	keyXDR, entryXDR := makeContractDataLedgerPair(t)
+
+	manifestPath := filepath.Join(t.TempDir(), "ledger_override.json")
+	manifest := ledgerOverrideManifest{
+		LedgerEntries: map[string]string{
+			keyXDR: entryXDR,
+		},
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, data, 0644))
+
+	loaded, err := loadLedgerOverrideManifest(manifestPath)
+	require.NoError(t, err)
+	require.Equal(t, entryXDR, loaded[keyXDR])
+
+	flagOverrides, err := parseLedgerOverrideFlags([]string{
+		"overrideKey:overrideValue",
+	})
+	require.NoError(t, err)
+
+	merged := mergeLedgerOverrides(loaded, flagOverrides)
+	require.Equal(t, entryXDR, merged[keyXDR])
+	require.Equal(t, "overrideValue", merged["overrideKey"])
+}
+
+func TestGetLedgerEntries_OfflineMockOverrides(t *testing.T) {
+	keyXDR, entryXDR := makeContractDataLedgerPair(t)
+
+	overrides, err := parseLedgerOverrideFlags([]string{
+		keyXDR + ":" + entryXDR,
+	})
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GetLedgerEntriesRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+		reqKeys := req.Params[0].([]interface{})
+		entries := make([]LedgerEntryResult, len(reqKeys))
+		for i, key := range reqKeys {
+			keyStr := key.(string)
+			value, ok := overrides[keyStr]
+			if !ok {
+				t.Fatalf("unexpected ledger key requested: %s", keyStr)
+			}
+			entries[i] = LedgerEntryResult{
+				Key:                keyStr,
+				Xdr:                value,
+				LastModifiedLedger: 54321,
+				LiveUntilLedger:    54400,
+			}
+		}
+
+		resp := GetLedgerEntriesResponse{Jsonrpc: "2.0", ID: 1}
+		resp.Result.Entries = entries
+		resp.Result.LatestLedger = 54321
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(resp))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		Network:      Testnet,
+		HorizonURL:   server.URL,
+		SorobanURL:   server.URL,
+		CacheEnabled: false,
+		AltURLs:      []string{server.URL},
+	}
+
+	result, err := client.GetLedgerEntries(context.Background(), []string{keyXDR})
+	require.NoError(t, err)
+	require.Equal(t, entryXDR, result[keyXDR])
+}
+
+func TestGetLedgerEntries_OfflineMockManifestMerge(t *testing.T) {
+	baseKey, baseEntry := makeContractDataLedgerPair(t)
+	accountID := xdr.MustAddress("GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H")
+	accountKey := xdr.LedgerKey{
+		Type: xdr.LedgerEntryTypeAccount,
+		Account: &xdr.LedgerKeyAccount{
+			AccountId: accountID,
+		},
+	}
+	accountKeyXDR, err := EncodeLedgerKey(accountKey)
+	require.NoError(t, err)
+	accountEntryXDR := buildValidEntryB64(accountKeyXDR)
+
+	manifestPath := filepath.Join(t.TempDir(), "ledger_override.json")
+	manifest := ledgerOverrideManifest{
+		LedgerEntries: map[string]string{
+			baseKey: baseEntry,
+		},
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, data, 0644))
+
+	manifestEntries, err := loadLedgerOverrideManifest(manifestPath)
+	require.NoError(t, err)
+
+	flagOverrides, err := parseLedgerOverrideFlags([]string{
+		accountKeyXDR + ":" + accountEntryXDR,
+	})
+	require.NoError(t, err)
+
+	overrides := mergeLedgerOverrides(manifestEntries, flagOverrides)
+	require.Len(t, overrides, 2)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req GetLedgerEntriesRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+		reqKeys := req.Params[0].([]interface{})
+		entries := make([]LedgerEntryResult, len(reqKeys))
+		for i, key := range reqKeys {
+			keyStr := key.(string)
+			value, ok := overrides[keyStr]
+			require.True(t, ok, "missing override for key %s", keyStr)
+			entries[i] = LedgerEntryResult{
+				Key:                keyStr,
+				Xdr:                value,
+				LastModifiedLedger: 100,
+				LiveUntilLedger:    200,
+			}
+		}
+
+		resp := GetLedgerEntriesResponse{Jsonrpc: "2.0", ID: 1}
+		resp.Result.Entries = entries
+		resp.Result.LatestLedger = 100
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(resp))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		Network:      Testnet,
+		HorizonURL:   server.URL,
+		SorobanURL:   server.URL,
+		CacheEnabled: false,
+		AltURLs:      []string{server.URL},
+	}
+
+	result, err := client.GetLedgerEntries(context.Background(), []string{baseKey, accountKeyXDR})
+	require.NoError(t, err)
+	require.Equal(t, baseEntry, result[baseKey])
+	require.Equal(t, accountEntryXDR, result[accountKeyXDR])
 }

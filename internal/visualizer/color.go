@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package visualizer
@@ -9,59 +9,39 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-// ANSI SGR codes
-const (
-	sgrReset   = "\033[0m"
-	sgrRed     = "\033[31m"
-	sgrGreen   = "\033[32m"
-	sgrYellow  = "\033[33m"
-	sgrBlue    = "\033[34m"
-	sgrMagenta = "\033[35m"
-	sgrCyan    = "\033[36m"
-	sgrDim     = "\033[2m"
-	sgrBold    = "\033[1m"
-)
+// ANSI SGR (Select Graphic Rendition) escape codes for terminal colors.
+// Redundant constants removed as they are defined in ansi.go
 
-// ColorEnabled reports whether ANSI color output should be used.
-// Check order (NO_COLOR has highest priority):
-//   - NO_COLOR (https://no-color.org/): if set (any non-empty value), colors are disabled
-//   - FORCE_COLOR: if set (e.g. FORCE_COLOR=1), forces colors even when not a TTY (useful in CI)
-//   - Non-TTY: when stdout is piped or redirected, colors disabled (no garbage in logs)
-//   - TERM=dumb: minimal terminal, no colors
-func ColorEnabled() bool {
-	// NO_COLOR takes precedence over everything
-	if noColor() {
-		return false
-	}
-	// FORCE_COLOR allows colors in pipes/CI (e.g. GitHub Actions with ANSI support)
-	if forceColor() {
-		return true
-	}
-	// Not a real terminal (pipe, redirect, log file)
-	if !isatty.IsTerminal(os.Stdout.Fd()) {
-		return false
-	}
-	// Dumb terminal (e.g. emacs shell)
-	if termDumb() {
-		return false
-	}
-	return true
-}
-
-// noColor returns true if NO_COLOR is set (presence = no color per no-color.org).
-func noColor() bool {
+func noColorSet() bool {
 	_, ok := os.LookupEnv("NO_COLOR")
 	return ok
 }
 
-// forceColor returns true if FORCE_COLOR is set to a non-empty value.
-func forceColor() bool {
-	return os.Getenv("FORCE_COLOR") != ""
+// ColorEnabled reports whether ANSI color output should be used.
+func ColorEnabled() bool {
+	// NO_COLOR must always take precedence.
+	if noColorSet() {
+		return false
+	}
+	if os.Getenv("FORCE_COLOR") != "" {
+		return true
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	return isatty.IsTerminal(os.Stdout.Fd())
 }
 
-// termDumb returns true for minimal terminals that don't support ANSI.
-func termDumb() bool {
-	return os.Getenv("TERM") == "dumb"
+// colorMap maps color names to ANSI SGR codes.
+var colorMap = map[string]string{ //nolint:unused // Reserved for future use in dynamic color mapping
+	"red":     sgrRed,
+	"green":   sgrGreen,
+	"yellow":  sgrYellow,
+	"blue":    sgrBlue,
+	"magenta": sgrMagenta,
+	"cyan":    sgrCyan,
+	"bold":    sgrBold,
+	"dim":     sgrDim,
 }
 
 // Colorize returns text with ANSI color if enabled, otherwise plain text.
@@ -69,10 +49,7 @@ func Colorize(text string, color string) string {
 	if !ColorEnabled() {
 		return text
 	}
-	return ansiWrap(text, color)
-}
 
-func ansiWrap(text, color string) string {
 	var code string
 	switch color {
 	case "red":
@@ -94,37 +71,43 @@ func ansiWrap(text, color string) string {
 	default:
 		return text
 	}
+
 	return code + text + sgrReset
 }
 
-// Success returns a success indicator: colored checkmark if enabled, "[OK]" otherwise.
-// Success returns a success indicator: colored checkmark if enabled, "[OK]" otherwise.
+// ContractBoundary returns a visual separator for cross-contract call transitions.
+func ContractBoundary(fromContract, toContract string) string {
+
+	line := "--- contract boundary: " + fromContract + " -> " + toContract + " ---"
+	if !ColorEnabled() {
+		return line
+	}
+	return sgrMagenta + sgrBold + line + sgrReset
+}
+
+// Success returns a success indicator.
 func Success() string {
-	if ColorEnabled() {
-		return sgrGreen + "[OK]" + sgrReset
-	}
-	return "[OK]"
+	return Colorize("[OK]", "green")
 }
 
-// Warning returns a warning indicator: colored warning sign if enabled, "[!]" otherwise.
+// Warning returns a warning indicator.
 func Warning() string {
-	if ColorEnabled() {
-		return sgrYellow + "[!]" + sgrReset
-	}
-	return "[!]"
+	return Colorize("[!]", "yellow")
 }
 
-// Error returns an error indicator: colored X if enabled, "[X]" otherwise.
+// Error returns an error indicator.
 func Error() string {
-	if ColorEnabled() {
-		return sgrRed + "[X]" + sgrReset
-	}
-	return "[X]"
+	return Colorize("[FAIL]", "red")
 }
 
-// Symbol returns a symbol that may be styled; when colors disabled, returns plain ASCII equivalent.
+// Info returns an info indicator.
+func Info() string {
+	return Colorize("[i]", "cyan")
+}
+
+// Symbol returns a symbol name rendered as ASCII markers.
 //
-//nolint:gocyclo
+//nolint:gocyclo // Large switch statement mapping symbol names to ASCII representations
 func Symbol(name string) string {
 	if ColorEnabled() {
 		switch name {
@@ -164,7 +147,7 @@ func Symbol(name string) string {
 			return name
 		}
 	}
-	// Plain ASCII fallbacks for non-TTY / CI
+
 	switch name {
 	case "check":
 		return "[OK]"

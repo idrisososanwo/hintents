@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -9,14 +9,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/dotandev/hintents/internal/version"
 	"github.com/spf13/cobra"
-)
-
-var (
-	// Build information populated by ldflags
-	Version   = "dev"
-	CommitSHA = "unknown"
-	BuildDate = "unknown"
 )
 
 type VersionInfo struct {
@@ -28,10 +22,11 @@ type VersionInfo struct {
 
 // versionCmd represents the version command
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version information",
-	Long:  "Display detailed build information including version, commit hash, and build date",
-	Args:  cobra.NoArgs,
+	Use:     "version",
+	GroupID: "utility",
+	Short:   "Show version information",
+	Long:    "Display detailed build information including version, commit hash, and build date",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 
@@ -46,15 +41,15 @@ var versionCmd = &cobra.Command{
 			fmt.Printf("Build Date:   %s\n", info.BuildDate)
 			fmt.Printf("Go Version:   %s\n", info.GoVersion)
 		}
-		fmt.Printf("erst version %s\n", Version)
+		fmt.Printf("erst version %s\n", version.Version)
 	},
 }
 
 func getVersionInfo() VersionInfo {
 	info := VersionInfo{
-		Version:   Version,
-		CommitSHA: CommitSHA,
-		BuildDate: BuildDate,
+		Version:   version.Version,
+		CommitSHA: version.CommitSHA,
+		BuildDate: version.BuildDate,
 		GoVersion: "unknown",
 	}
 
