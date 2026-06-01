@@ -41,7 +41,7 @@ impl SourceMapper {
     /// When `no_cache` is true, WASM debug symbols are always re-parsed from scratch.
     pub fn new_with_options(wasm_bytes: Vec<u8>, no_cache: bool) -> Self {
         if no_cache {
-            eprintln!("--no-cache: skipping cache, re-parsing WASM symbols from scratch.");
+            tracing::debug!("--no-cache: skipping cache, re-parsing WASM symbols from scratch.");
         }
         let has_symbols = Self::check_debug_symbols(&wasm_bytes);
         let git_repo = Self::detect_git_repository();
