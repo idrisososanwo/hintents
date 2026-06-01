@@ -434,6 +434,7 @@ mod tests {
 
         let entry = SourceMapCacheEntry {
             wasm_hash: wasm_hash.clone(),
+            wasm_mtime: None,
             has_symbols: true,
             mappings,
             created_at: 1_234_567_890,

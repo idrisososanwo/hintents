@@ -44,6 +44,7 @@ fn test_concurrency_source_map_cache() {
 
                     let entry = SourceMapCacheEntry {
                         wasm_hash: wasm_hash.clone(),
+                        wasm_mtime: None,
                         has_symbols: true,
                         mappings,
                         created_at: 1000 + i,
