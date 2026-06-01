@@ -468,7 +468,10 @@ fn main() {
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to decode ResultMeta base64, proceeding with empty storage: {}", e);
+                tracing::warn!(
+                    "Failed to decode ResultMeta base64, proceeding with empty storage: {}",
+                    e
+                );
                 None
             }
         }
