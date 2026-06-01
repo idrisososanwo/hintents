@@ -11,17 +11,13 @@ pub use types::IpcError;
 ///
 /// If the socket cannot be established (e.g. the port is already in use or
 /// the address is invalid) the function returns an `Err(IpcError::PortBindingFailed)`
-/// with a human-readable message so the CLI can report the failure instead
-/// of unwinding the stack with a panic.
+/// with the original `std::io::Error` preserved as `source`, so the CLI can
+/// inspect `ErrorKind` and report the failure with the appropriate exit code.
 #[allow(dead_code)]
 pub fn start_ipc_bridge<A: std::net::ToSocketAddrs>(
     addr: A,
 ) -> Result<std::net::TcpListener, IpcError> {
-    std::net::TcpListener::bind(addr).map_err(|e| {
-        IpcError::PortBindingFailed(format!(
-            "IPC bridge could not bind to the requested address: {e}"
-        ))
-    })
+    std::net::TcpListener::bind(addr).map_err(|source| IpcError::PortBindingFailed { source })
 }
 
 #[cfg(test)]
@@ -119,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn test_start_ipc_bridge_bad_address_returns_error() {
+    fn test_start_ipc_bridge_addr_in_use_returns_error() {
         // Bind two listeners to the same port to force EADDRINUSE
         let first = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = first.local_addr().unwrap().port();

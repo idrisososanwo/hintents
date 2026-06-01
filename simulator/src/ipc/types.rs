@@ -15,12 +15,16 @@ pub enum IpcError {
     Json(#[from] serde_json::Error),
 
     /// Returned when `start_ipc_bridge` cannot bind to the requested address
-    /// (e.g. port already in use). Exit code 102 is the CLI convention for
-    /// port-binding failures.
-    #[error("{0} (error code 102: port binding failed)")]
-    PortBindingFailed(String),
+    /// (e.g. port already in use, permission denied). The underlying
+    /// `std::io::Error` is preserved as the error source so callers can
+    /// inspect `ErrorKind` (e.g. `AddrInUse`, `PermissionDenied`) and map
+    /// it to the appropriate CLI exit code.
+    #[error("IPC bridge could not bind: {source}")]
+    PortBindingFailed {
+        #[source]
+        source: std::io::Error,
+    },
 }
-
 
 /// Identifies the kind of streaming frame emitted to stdout.
 #[allow(dead_code)]
